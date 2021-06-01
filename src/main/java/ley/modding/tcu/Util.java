@@ -1,119 +1,104 @@
 package ley.modding.tcu;
 
-import ley.modding.tcu.model.LocalPack;
-import ley.modding.tcu.model.RemotePack;
-import ley.modding.tcu.model.VersionDiff;
+import ley.anvil.addonscript.v1.AddonscriptJSON;
+import ley.modding.tcu.model.Config;
+import ley.modding.tcu.model.RelationFile;
+import ley.modding.tcu.model.Release;
+import ley.modding.tcu.model.Version;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.Reader;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class Util {
 
-    private static RemotePack rcache = null;
-    private static LocalPack lcache = null;
-
-    public static RemotePack getRemote(LocalPack pack) throws IOException {
-        if (rcache != null)
-            return rcache;
-        URL url = new URL(pack.packURL);
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
-        con.setRequestMethod("GET");
-        con.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.95 Safari/537.11");
-        int status = con.getResponseCode();
-        if (status != 200) {
-            return null;
-        }
-        InputStreamReader r2 = new InputStreamReader(con.getInputStream());
-        RemotePack ret = RemotePack.fromJSON(r2);
-        r2.close();
-        rcache = ret;
-        return ret;
-    }
-
-    public static LocalPack getLocal(File local) throws IOException {
-        if (lcache != null)
-            return lcache;
+    public static Config getConfig(File local) throws IOException {
         Reader r = new FileReader(local);
-        LocalPack pack = LocalPack.fromJSON(r);
+        Config cfg = Config.fromJSON(r);
         r.close();
-        lcache = pack;
-        return pack;
+        return cfg;
     }
 
-    public static void writeLocal(File local) throws IOException {
-        Writer w = new FileWriter(local);
-        lcache.toJson(w);
-        w.close();
+    public static Version checkVersion(Config conf) {
+        GiteaAPI api = conf.getAPI();
+        List<Release> releases = api.getReleases();
+        return new Version(releases.get(0).tag, conf.version, releases.get(0).zipUrl);
     }
 
-    public static String[] checkVersion(File local) throws IOException {
-        LocalPack lpack = getLocal(local);
+    public static String resolve(String url) {
+        try {
+            HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+            con.setRequestMethod("HEAD");
+            con.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.95 Safari/537.11");
+            con.setInstanceFollowRedirects(false);
+            int status = con.getResponseCode();
+            if (status == 301 || status == 302) {
+                String loc = con.getHeaderField("location");
+                return loc;
+            } else {
+                return url;
+            }
+        } catch (IOException e) {
+            return url;
+        }
+    }
 
-        RemotePack rpack = getRemote(lpack);
+    public static List<RelationFile> getRelations(AddonscriptJSON as) {
+        List<RelationFile> relations = new ArrayList<>();
+        Map<String, String> repos = new HashMap<>();
 
-        if (rpack != null && rpack.versions.contains(lpack.version)) {
-            int index = rpack.versions.indexOf(lpack.version);
-            int lastIndex = rpack.versions.size() - 1;
-            if (index == lastIndex) {
-                return new String[0];
-            } else  {
-                String[] ret = new String[lastIndex - index];
-                int j = 0;
-                for (int i = index + 1; i <= lastIndex; i++) {
-                    ret [j] = rpack.versions.get(i);
-                    j++;
+        for (AddonscriptJSON.Repository r : as.repositories) {
+            String url = r.url;
+            if (!url.endsWith("/")) {
+                url += "/";
+            }
+            repos.put(r.id, url);
+        }
+
+        for (AddonscriptJSON.Relation r : as.versions.get(0).relations) {
+            if (r.type.equals("modloader"))
+                continue;
+            RelationFile rel = new RelationFile();
+            rel.id = r.id;
+            rel.dir = r.file.installer.split(":")[1];
+            if (r.file.link != null && !r.file.link.isEmpty()) {
+                rel.url = r.file.link;
+            } else {
+                String[] parts = r.file.artifact.split(":");
+                if (parts[0].equals("curse.maven")) {
+                    parts[1] = parts[1] + "-" + parts[1];
                 }
-                return ret;
-            }
-        }
-        return new String[0];
-    }
-
-    public static VersionDiff buildDiff(String[] versions) throws IOException {
-        VersionDiff diff = new VersionDiff();
-        diff.add = new ArrayList<>();
-        diff.remove = new ArrayList<>();
-        RemotePack pack = getRemote(lcache);
-
-        for (String ver : versions) {
-            VersionDiff vdiff = pack.diff.get(ver);
-            if (vdiff != null) {
-                if (vdiff.remove != null) {
-                    for (VersionDiff.RemoveFile f : vdiff.remove) {
-                        boolean add = true;
-                        List<VersionDiff.AddFile> toRem = new ArrayList<>();
-                        for (VersionDiff.AddFile a : diff.add) {
-                            if (a.dir.equals(f.dir) && a.filename.equals(f.filename)) {
-                                add = false;
-                                toRem.add(a);
-                            }
-                        }
-                        diff.add.removeAll(toRem);
-                        if (add)
-                            diff.remove.add(f);
-                    }
+                parts[0] = parts[0].replace('.', '/');
+                rel.url = repos.get(r.file.repository) + parts[0] + "/" + parts[1] + "/" + parts[2] + "/" + parts[1] + "-" + parts[2];
+                if (parts.length == 4) {
+                    rel.url += "-";
+                    rel.url += parts[3];
                 }
-                if (vdiff.add != null)
-                    diff.add.addAll(vdiff.add);
+                rel.url += ".jar";
             }
-        }
 
-        return diff;
+            relations.add(rel);
+        }
+        return relations;
     }
 
-    public static URL getOverrides() {
-        if (rcache != null && rcache.overrides != null && !rcache.overrides.isEmpty()) {
-            try {
-                return new URL(rcache.overrides);
-            } catch (MalformedURLException e) {
-                e.printStackTrace();
-            }
-        }
-        return null;
+    public static List<RelationFile> getToRemove(List<RelationFile> old, List<RelationFile> newrel) {
+        List<RelationFile> oldRel = new ArrayList<>(old);
+        oldRel.removeAll(newrel);
+        return oldRel;
+    }
+
+    public static List<RelationFile> getToAdd(List<RelationFile> old, List<RelationFile> newrel) {
+        List<RelationFile> newRel = new ArrayList<>(newrel);
+        newRel.removeAll(old);
+        return newRel;
     }
 
 }

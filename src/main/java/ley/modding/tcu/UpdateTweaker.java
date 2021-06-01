@@ -1,12 +1,14 @@
 package ley.modding.tcu;
 
-import ley.modding.tcu.model.LocalPack;
-import ley.modding.tcu.model.VersionDiff;
+import ley.anvil.addonscript.v1.AddonscriptJSON;
+import ley.modding.tcu.model.Config;
+import ley.modding.tcu.model.RelationFile;
+import ley.modding.tcu.model.Version;
 import net.minecraft.launchwrapper.ITweaker;
 import net.minecraft.launchwrapper.LaunchClassLoader;
 
 import java.io.File;
-import java.net.URL;
+import java.io.FileWriter;
 import java.util.List;
 
 public class UpdateTweaker implements ITweaker {
@@ -32,20 +34,25 @@ public class UpdateTweaker implements ITweaker {
     public void injectIntoClassLoader(LaunchClassLoader classLoader) {
         this.classLoader = classLoader;
         try {
-            File modpack = new File(gameDir.getAbsolutePath() + "/modpack.json");
-            if (modpack.exists()) {
-                String[] ver = Util.checkVersion(modpack);
-                if (ver.length == 0)
+            File configfile = new File(gameDir.getAbsolutePath() + "/pack.json");
+            if (configfile.exists()) {
+                Config config = Util.getConfig(configfile);
+                Version version = Util.checkVersion(config);
+                if (version.isLatest())
                     return;
-                VersionDiff diff = Util.buildDiff(ver);
+                System.out.println(version.current + " is outdated, starting update...");
+                AddonscriptJSON oldAS = config.getAPI().getASFromTag(version.current);
+                AddonscriptJSON newAS = config.getAPI().getASFromTag(version.latest);
+                List<RelationFile> oldRel = Util.getRelations(oldAS);
+                List<RelationFile> newRel = Util.getRelations(newAS);
                 FileHandler handler = new FileHandler(gameDir);
-                handler.processDiff(diff);
-                URL overrides = Util.getOverrides();
-                if (overrides != null)
-                    handler.processOverrides(overrides);
-                LocalPack pack = Util.getLocal(modpack);
-                pack.version = ver[ver.length - 1];
-                Util.writeLocal(modpack);
+                handler.removeFiles(Util.getToRemove(oldRel, newRel));
+                handler.addFiles(Util.getToAdd(oldRel, newRel));
+                handler.processOverrides(version.overrides, newAS, config);
+                config.version = version.latest;
+                FileWriter writer = new FileWriter(configfile);
+                config.toJson(writer);
+                writer.close();
             }
         } catch (Exception e) {
             throw new RuntimeException(e);

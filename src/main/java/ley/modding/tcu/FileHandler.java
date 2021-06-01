@@ -1,7 +1,10 @@
 package ley.modding.tcu;
 
-import ley.modding.tcu.model.VersionDiff;
+import ley.anvil.addonscript.v1.AddonscriptJSON;
+import ley.modding.tcu.model.Config;
+import ley.modding.tcu.model.RelationFile;
 import net.lingala.zip4j.ZipFile;
+import net.lingala.zip4j.model.FileHeader;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -9,6 +12,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.List;
 
 public class FileHandler {
 
@@ -37,38 +41,55 @@ public class FileHandler {
         out.close();
     }
 
-    public void processDiff(VersionDiff diff) {
-
-        for (VersionDiff.RemoveFile rem : diff.remove) {
-            File f = getFile(rem.dir, rem.filename);
-            if (f.exists()) {
-                boolean del = f.delete();
-                if (!del)
-                    throw new RuntimeException("File deletion error");
-            }
+    public void removeFiles(List<RelationFile> rels) {
+        for (RelationFile rel : rels) {
+            File f = getFile(rel.dir, rel.filename());
+            if (f.exists())
+                f.delete();
         }
+    }
 
-        for (VersionDiff.AddFile add : diff.add) {
+    public void addFiles(List<RelationFile> rels) {
+        for (RelationFile rel : rels) {
             try {
-                downloadFile(add.dir, add.filename, new URL(add.url));
-            } catch (Exception e) {
+                System.out.println("Downloading " + rel.id);
+                downloadFile(rel.dir, rel.filename(), new URL(rel.url));
+            } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
-
     }
 
-    public void processOverrides(URL overrides) {
+    public void processOverrides(String overrides, AddonscriptJSON as, Config config) {
         try {
-            downloadFile(".", "temp.zip", overrides);
+            System.out.println("Downloading overrides...");
+            downloadFile(".", "temp.zip", new URL(overrides));
             File tmp = getFile(".", "temp.zip");
             ZipFile zip = new ZipFile(tmp);
-            zip.extractAll(gamedir.getPath());
+            for (AddonscriptJSON.File f : as.versions.get(0).files) {
+                if (f.installer.equals("internal.override")) {
+                    String loc = buildPath(config.repository, f.link);
+                    List<FileHeader> headers = zip.getFileHeaders();
+                    for (FileHeader header : headers) {
+                        if (header.toString().startsWith(loc) && !header.isDirectory())
+                            zip.extractFile(header, ".", header.toString().replace(loc, ""));
+                    }
+                }
+            }
             tmp.delete();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
 
+    private String buildPath(String repo, String loc) {
+        String fileloc = loc.replace("file://", "");
+        if (fileloc.startsWith("..")) {
+            fileloc = fileloc.replace("..", "");
+        } else {
+            fileloc = "/src/" + fileloc;
+        }
+        return repo + fileloc + "/";
     }
 
 }
