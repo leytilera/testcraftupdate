@@ -44,8 +44,11 @@ public class FileHandler {
     public void removeFiles(List<RelationFile> rels) {
         for (RelationFile rel : rels) {
             File f = getFile(rel.dir, rel.filename());
-            if (f.exists())
-                f.delete();
+            if (f.exists()) {
+                if (!f.delete()) {
+                    throw new RuntimeException("Updater is not able to delete File. Please delete it manually: " + f.getAbsolutePath());
+                }
+            }
         }
     }
 

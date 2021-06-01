@@ -9,6 +9,7 @@ import net.minecraft.launchwrapper.LaunchClassLoader;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.util.List;
 
 public class UpdateTweaker implements ITweaker {
@@ -54,7 +55,7 @@ public class UpdateTweaker implements ITweaker {
                 config.toJson(writer);
                 writer.close();
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
