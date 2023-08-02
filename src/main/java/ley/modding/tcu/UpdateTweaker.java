@@ -37,23 +37,28 @@ public class UpdateTweaker implements ITweaker {
         try {
             File configfile = new File(gameDir.getAbsolutePath() + "/pack.json");
             if (configfile.exists()) {
+                boolean updated = false;
                 Config config = Util.getConfig(configfile);
                 Version version = Util.checkVersion(config);
-                if (version.isLatest())
-                    return;
-                System.out.println(version.current + " is outdated, starting update...");
-                AddonscriptJSON oldAS = config.getAPI().getASFromTag(version.current);
-                AddonscriptJSON newAS = config.getAPI().getASFromTag(version.latest);
-                List<RelationFile> oldRel = Util.getRelations(oldAS);
-                List<RelationFile> newRel = Util.getRelations(newAS);
-                FileHandler handler = new FileHandler(gameDir);
-                handler.removeFiles(Util.getToRemove(oldRel, newRel));
-                handler.addFiles(Util.getToAdd(oldRel, newRel));
-                handler.processOverrides(version.overrides, newAS, config);
+                if (!version.isLatest()) {
+                    System.out.println(version.current + " is outdated, starting update...");
+                    AddonscriptJSON oldAS = config.getAPI().getASFromTag(version.current);
+                    AddonscriptJSON newAS = config.getAPI().getASFromTag(version.latest);
+                    List<RelationFile> oldRel = Util.getRelations(oldAS);
+                    List<RelationFile> newRel = Util.getRelations(newAS);
+                    FileHandler handler = new FileHandler(gameDir);
+                    handler.removeFiles(Util.getToRemove(oldRel, newRel));
+                    handler.addFiles(Util.getToAdd(oldRel, newRel));
+                    handler.processOverrides(version.overrides, newAS, config);
+                    updated = true;
+                }
                 config.version = version.latest;
                 FileWriter writer = new FileWriter(configfile);
                 config.toJson(writer);
                 writer.close();
+                if (updated) {
+                    throw new RuntimeException("Successfully updated modpack. Please restart the game.");
+                }
             }
         } catch (IOException e) {
             throw new RuntimeException(e);

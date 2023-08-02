@@ -4,7 +4,7 @@ plugins {
 }
 
 group 'ley.modding'
-version '1.0'
+version '1.1.0'
 
 sourceCompatibility = 1.8
 
@@ -15,7 +15,7 @@ repositories {
         name "minecraft"
     }
     maven {
-        url "https://data.tilera.xyz/maven/"
+        url "https://maven.tilera.xyz/"
     }
 }
 

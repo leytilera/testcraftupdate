@@ -13,7 +13,7 @@ public class Version {
     }
 
     public boolean isLatest() {
-        return latest.equals(current);
+        return current == null || latest.equals(current);
     }
 
 }
